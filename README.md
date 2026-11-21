@@ -30,6 +30,39 @@ Site en ligne : <https://dwaeuacpobjns.cloudfront.net>
 | `tests/`, `eval/` | Tests pytest ; jeu de titres étiquetés et rapports d'évaluation du classifieur |
 | `docs/` | Documentation technique, one-pager, script vidéo, validation, limites, AWS |
 
+## Architecture
+
+Le code calcule les chiffres et applique les règles ; le modèle de langage (Amazon Bedrock) classe des titres et rédige à partir de preuves, sous le contrôle d'un gardien qui vérifie chaque phrase.
+
+```mermaid
+flowchart LR
+  subgraph Hors_ligne["Hors ligne, avant la démo"]
+    I["ingest/<br/>nouvelles et événements publics"] --> SN[("data/snapshots")]
+    SN --> CL["agents/<br/>classement par Bedrock"]
+    CL --> SN
+    SN -->|upload| S3D[("S3 données")]
+  end
+  subgraph En_ligne["En ligne, à chaque requête"]
+    U["Navigateur<br/>React + TypeScript"] -->|HTTPS| CF["CloudFront"] --> S3W[("S3 site")]
+    U -->|HTTPS| AG["API Gateway<br/>limite de débit"]
+    AG --> L["Lambda<br/>api/handler.py"]
+    L --> SV["services/<br/>règles, métriques, étude d'événements"]
+    SV --> AGT["agents/<br/>rédacteur, gardien, orchestrateur"]
+    AGT -->|Converse| BR["Amazon Bedrock"]
+    S3D -->|démarrage à froid| L
+    L --> CW["CloudWatch<br/>journaux et métriques"]
+  end
+```
+
+- **Règles d'abord, modèle ensuite.** Le profil, la pertinence et la cohérence viennent de règles YAML déterministes ; le modèle ne décide jamais du verdict.
+- **Explications vérifiables.** Chaque chiffre vient d'une preuve calculée par le code, et le gardien rejette toute phrase qui n'est pas appuyée par une preuve.
+- **Rien de lent sur le chemin en ligne.** L'ingestion et le classement se font avant la démo ; la Lambda ne lit que des snapshots.
+- **Dégradation propre.** Si Bedrock est indisponible, le fil reste affiché (règles et preuves, sans résumé) plutôt que d'inventer une explication.
+- **Même contrat en local et sur AWS.** Le serveur FastAPI local et la Lambda passent par les mêmes routes et la même validation.
+- **Vie privée.** Aucun portefeuille ni profil n'est stocké ni journalisé ; buckets privés et rôle Lambda au moindre privilège.
+
+Détails complets : [docs/architecture.md](docs/architecture.md).
+
 ## Prérequis
 
 - Python 3.11 ou plus
